@@ -1,0 +1,113 @@
+#!/bin/sh
+
+module_dir="/lib/modules/6.12.9/extra"
+
+scull_module="scull"
+scull_device="scull"
+
+faulty_module="faulty"
+faulty_device="faulty"
+
+hello_module="hello"
+
+mode="664"
+
+case $1 in
+	start)
+		if grep -q '^staff:' /etc/group; then
+		    group="staff"
+		else
+    		group="wheel"
+		fi
+
+		# Init Scull
+		insmod $module_dir/$scull_module.ko || exit 1
+		major=$(awk "\$2==\"$scull_module\" {print \$1}" /proc/devices)
+		
+		rm -f /dev/${scull_device}[0-3]
+		mknod /dev/${scull_device}0 c $major 0
+		mknod /dev/${scull_device}1 c $major 1
+		mknod /dev/${scull_device}2 c $major 2
+		mknod /dev/${scull_device}3 c $major 3
+		ln -sf ${scull_device}0 /dev/${scull_device}
+		chgrp $group /dev/${scull_device}[0-3] 
+		chmod $mode  /dev/${scull_device}[0-3]
+
+		rm -f /dev/${scull_device}pipe[0-3]
+		mknod /dev/${scull_device}pipe0 c $major 4
+		mknod /dev/${scull_device}pipe1 c $major 5
+		mknod /dev/${scull_device}pipe2 c $major 6
+		mknod /dev/${scull_device}pipe3 c $major 7
+		ln -sf ${scull_device}pipe0 /dev/${scull_device}pipe
+		chgrp $group /dev/${scull_device}pipe[0-3] 
+		chmod $mode  /dev/${scull_device}pipe[0-3]
+
+		rm -f /dev/${scull_device}single
+		mknod /dev/${scull_device}single  c $major 8
+		chgrp $group /dev/${scull_device}single
+		chmod $mode  /dev/${scull_device}single
+
+		rm -f /dev/${scull_device}uid
+		mknod /dev/${scull_device}uid   c $major 9
+		chgrp $group /dev/${scull_device}uid
+		chmod $mode  /dev/${scull_device}uid
+
+		rm -f /dev/${scull_device}wuid
+		mknod /dev/${scull_device}wuid  c $major 10
+		chgrp $group /dev/${scull_device}wuid
+		chmod $mode  /dev/${scull_device}wuid
+
+		rm -f /dev/${scull_device}priv
+		mknod /dev/${scull_device}priv  c $major 11
+		chgrp $group /dev/${scull_device}priv
+		chmod $mode  /dev/${scull_device}priv
+		
+		# Init Faulty
+		echo "Load our module, exit on failure"
+		insmod $module_dir/$faulty_module.ko || exit 1
+		echo "Get the major number (allocated with allocate_chrdev_region) from /proc/devices"
+		major=$(awk "\$2==\"$faulty_module\" {print \$1}" /proc/devices)
+		if [ ! -z ${major} ]; then
+			echo "Remove any existing /dev node for /dev/${faulty_device}"
+			rm -f /dev/${faulty_device}
+			echo "Add a node for our device at /dev/${faulty_device} using mknod"
+			mknod /dev/${faulty_device} c $major 0
+			echo "Change group owner to ${group}"
+			chgrp $group /dev/${faulty_device}
+			echo "Change access mode to ${mode}"
+			chmod $mode  /dev/${faulty_device}
+		else
+			echo "No device found in /proc/devices for driver ${module} (this driver may not allocate a device)"
+		fi
+		
+		# Init hello
+		#modprobe $module_dir/$hello_module.ko || exit 1
+		insmod $module_dir/$hello_module.ko || exit 1
+		;;
+
+	stop)
+		# Remove scull
+		rmmod $module_dir/$scull_module || exit 1
+
+		rm -f /dev/${scull_device} /dev/${scull_device}[0-3] 
+		rm -f /dev/${scull_device}priv
+		rm -f /dev/${scull_device}pipe /dev/${scull_device}pipe[0-3]
+		rm -f /dev/${scull_device}single
+		rm -f /dev/${scull_device}uid
+		rm -f /dev/${scull_device}wuid
+		
+		# Remove faulty
+		rmmod $modules_dir/$faulty_module || exit 1
+		
+		rm -f /dev/${faulty_device}
+		
+		# Removme hello
+		modprobe $hello_module || exit 1
+		;;
+
+	*)
+		echo "Usage: $0 {start|stop}"
+        exit 1
+esac
+
+exit 0
